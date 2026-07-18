@@ -566,6 +566,16 @@ app.post("/api/payment/zarinpal/initiate", (req, res) => {
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
 });
+var distPath = import_path.default.join(process.cwd(), "dist");
+if (import_fs.default.existsSync(distPath)) {
+  app.use(import_express.default.static(distPath));
+  app.get("*", (req, res) => {
+    if (!req.path.startsWith("/api/")) {
+      res.sendFile(import_path.default.join(distPath, "index.html"));
+    }
+  });
+  console.log("Serving static frontend from dist/");
+}
 initDB();
 httpServer.listen(Number(PORT), "0.0.0.0", () => {
   console.log(`J,Gym Cloud Server running on port ${PORT}`);

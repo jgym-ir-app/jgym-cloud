@@ -1,0 +1,35 @@
+{
+  "id": "ir.jgym.app",
+  "name": "J,Gym | باشگاه بدنسازی هوشمند جابر",
+  "short_name": "J,Gym",
+  "description": "سیستم مدیریت هوشمند رختکن دیجیتال، کمد آنلاین و مربیگری اختصاصی باشگاه بدنسازی جابر",
+  "start_url": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
+  "background_color": "#0c0d0f",
+  "theme_color": "#0c0d0f",
+  "orientation": "portrait-primary",
+  "dir": "rtl",
+  "lang": "fa-IR",
+  "categories": ["sports", "utilities", "health"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "72x72 96x96 128x128 144x144 152x152 192x192 384x384 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "sizes": "72x72 96x96 128x128 144x144 152x152 192x192 384x384 512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}

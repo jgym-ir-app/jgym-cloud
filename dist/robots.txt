@@ -1,0 +1,6 @@
+# Robots.txt for J,Gym (jgym.ir)
+User-agent: *
+Allow: /
+
+# Sitemaps
+Sitemap: https://jgym.ir/sitemap.xml
