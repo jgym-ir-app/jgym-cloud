@@ -90,8 +90,6 @@ async function connectDB() {
   return true;
 }
 async function seedDB() {
-  const lockerCount = await lockersCol.countDocuments();
-  if (lockerCount > 0) return;
   const defaultLockers = Array.from({ length: 24 }, (_, i) => ({
     id: i + 1,
     status: "empty",
@@ -103,14 +101,28 @@ async function seedDB() {
     reservationNote: null,
     isDoorOpen: false
   }));
-  await lockersCol.insertMany(defaultLockers);
-  await settingsCol.insertOne({
-    coachName: "\u062C\u0627\u0628\u0631 \u067E\u0648\u0631\u0639\u0628\u0627\u0633",
-    coachPhone: "09112223344",
-    adminUsername: "jgym",
-    adminPassword: "Jgym123321"
-  });
-  console.log("Database seeded with defaults");
+  const existingIds = await lockersCol.distinct("id");
+  const idsToDelete = existingIds.filter((eid) => eid < 1 || eid > 24);
+  if (idsToDelete.length > 0) {
+    await lockersCol.deleteMany({ id: { $in: idsToDelete } });
+    console.log(`Cleaned ${idsToDelete.length} invalid locker IDs`);
+  }
+  for (const locker of defaultLockers) {
+    await lockersCol.updateOne({ id: locker.id }, { $set: locker }, { upsert: true });
+  }
+  await lockersCol.deleteMany({ id: { $gt: 24 } });
+  const count = await lockersCol.countDocuments();
+  console.log(`Lockers verified: ${count} lockers in database`);
+  const settingsCount = await settingsCol.countDocuments();
+  if (settingsCount === 0) {
+    await settingsCol.insertOne({
+      coachName: "\u062C\u0627\u0628\u0631 \u067E\u0648\u0631\u0639\u0628\u0627\u0633",
+      coachPhone: "09112223344",
+      adminUsername: "jgym",
+      adminPassword: "Jgym123321"
+    });
+    console.log("Default settings created");
+  }
 }
 function emit(event, payload) {
   if (io) io.emit(event, { ...payload, timestamp: Date.now() });
@@ -377,7 +389,8 @@ app.post("/api/lockers/move", async (req, res) => {
   if (!src || !tgt) return res.status(404).json({ message: "\u06A9\u0645\u062F \u06CC\u0627\u0641\u062A \u0646\u0634\u062F." });
   if (src.status === "empty") return res.status(400).json({ message: "\u06A9\u0645\u062F \u0645\u0628\u062F\u0623 \u062E\u0627\u0644\u06CC \u0627\u0633\u062A." });
   if (tgt.status !== "empty") return res.status(400).json({ message: "\u06A9\u0645\u062F \u0645\u0642\u0635\u062F \u067E\u0631 \u0627\u0633\u062A." });
-  await lockersCol.updateOne({ id: tgtId }, { $set: { ...src, id: tgtId } });
+  const { _id, ...srcData } = src;
+  await lockersCol.updateOne({ id: tgtId }, { $set: { ...srcData, id: tgtId } });
   if (src.memberId) {
     await membersCol.updateOne({ id: src.memberId }, { $set: { currentLockerId: tgtId } });
   }
@@ -507,7 +520,10 @@ app.post("/api/sales", async (req, res) => {
 });
 app.get("/api/messages", async (req, res) => {
   const { memberId } = req.query;
-  const filter = memberId ? { memberId } : {};
+  let filter = {};
+  if (memberId) {
+    filter = { memberId, type: { $ne: "forgot-password" } };
+  }
   res.json(await messagesCol.find(filter).toArray());
 });
 app.post("/api/messages", async (req, res) => {
@@ -585,6 +601,23 @@ app.post("/api/forgot-password", async (req, res) => {
 });
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: Date.now(), db: MONGODB_URI ? "mongodb" : "file" });
+});
+app.post("/api/admin/cleanup-lockers", async (req, res) => {
+  const { username, password } = req.body;
+  const settings = await settingsCol.findOne({});
+  if (username !== (settings?.adminUsername || "jgym") || password !== (settings?.adminPassword || "Jgym123321")) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+  for (let i = 1; i <= 24; i++) {
+    const count = await lockersCol.countDocuments({ id: i });
+    if (count > 1) {
+      const extras = await lockersCol.find({ id: i }).sort({ _id: 1 }).toArray();
+      const toDelete = extras.slice(1).map((d) => d._id);
+      await lockersCol.deleteMany({ _id: { $in: toDelete } });
+    }
+  }
+  const finalCount = await lockersCol.countDocuments();
+  res.json({ success: true, lockerCount: finalCount });
 });
 if (process.env.RENDER_EXTERNAL_URL) {
   const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
