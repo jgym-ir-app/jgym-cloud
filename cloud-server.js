@@ -90,6 +90,7 @@ async function connectDB() {
   return true;
 }
 async function seedDB() {
+  await lockersCol.deleteMany({});
   const defaultLockers = Array.from({ length: 24 }, (_, i) => ({
     id: i + 1,
     status: "empty",
@@ -101,18 +102,9 @@ async function seedDB() {
     reservationNote: null,
     isDoorOpen: false
   }));
-  const existingIds = await lockersCol.distinct("id");
-  const idsToDelete = existingIds.filter((eid) => eid < 1 || eid > 24);
-  if (idsToDelete.length > 0) {
-    await lockersCol.deleteMany({ id: { $in: idsToDelete } });
-    console.log(`Cleaned ${idsToDelete.length} invalid locker IDs`);
-  }
-  for (const locker of defaultLockers) {
-    await lockersCol.updateOne({ id: locker.id }, { $set: locker }, { upsert: true });
-  }
-  await lockersCol.deleteMany({ id: { $gt: 24 } });
+  await lockersCol.insertMany(defaultLockers);
   const count = await lockersCol.countDocuments();
-  console.log(`Lockers verified: ${count} lockers in database`);
+  console.log(`Lockers reset: ${count} lockers in database`);
   const settingsCount = await settingsCol.countDocuments();
   if (settingsCount === 0) {
     await settingsCol.insertOne({
@@ -608,14 +600,19 @@ app.post("/api/admin/cleanup-lockers", async (req, res) => {
   if (username !== (settings?.adminUsername || "jgym") || password !== (settings?.adminPassword || "Jgym123321")) {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
-  for (let i = 1; i <= 24; i++) {
-    const count = await lockersCol.countDocuments({ id: i });
-    if (count > 1) {
-      const extras = await lockersCol.find({ id: i }).sort({ _id: 1 }).toArray();
-      const toDelete = extras.slice(1).map((d) => d._id);
-      await lockersCol.deleteMany({ _id: { $in: toDelete } });
-    }
-  }
+  await lockersCol.deleteMany({});
+  const defaultLockers = Array.from({ length: 24 }, (_, i) => ({
+    id: i + 1,
+    status: "empty",
+    memberId: null,
+    memberName: null,
+    memberPhoto: null,
+    membershipId: null,
+    checkInTime: null,
+    reservationNote: null,
+    isDoorOpen: false
+  }));
+  await lockersCol.insertMany(defaultLockers);
   const finalCount = await lockersCol.countDocuments();
   res.json({ success: true, lockerCount: finalCount });
 });
