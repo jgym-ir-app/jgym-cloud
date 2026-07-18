@@ -28,6 +28,7 @@ var import_socket = require("socket.io");
 var import_cors = __toESM(require("cors"), 1);
 var import_path = __toESM(require("path"), 1);
 var import_fs = __toESM(require("fs"), 1);
+var import_zlib = __toESM(require("zlib"), 1);
 var import_mongodb = require("mongodb");
 process.on("unhandledRejection", (reason, promise) => {
   console.error("Unhandled Rejection:", promise, "reason:", reason);
@@ -50,8 +51,24 @@ var messagesCol;
 var settingsCol;
 var transformationsCol;
 app.use((0, import_cors.default)());
-app.use(import_express.default.json({ limit: "50mb" }));
-app.use(import_express.default.urlencoded({ limit: "50mb", extended: true }));
+app.use((req, res, next) => {
+  const originalSend = res.send.bind(res);
+  res.send = function(body) {
+    if (typeof body === "string" && body.length > 1024 && !res.getHeader("Content-Encoding")) {
+      const compressed = import_zlib.default.gzipSync(Buffer.from(body), { level: 6 });
+      if (compressed.length < body.length * 0.9) {
+        res.setHeader("Content-Encoding", "gzip");
+        res.setHeader("Content-Length", compressed.length);
+        res.removeHeader("Content-Type");
+        return originalSend(compressed);
+      }
+    }
+    return originalSend(body);
+  };
+  next();
+});
+app.use(import_express.default.json({ limit: "10mb" }));
+app.use(import_express.default.urlencoded({ limit: "10mb", extended: true }));
 async function connectDB() {
   if (!MONGODB_URI) {
     console.error("MONGODB_URI not set! Falling back to local db.json");
@@ -124,18 +141,41 @@ app.post("/api/auth/login", async (req, res) => {
   }
   return res.status(400).json({ success: false, message: "\u0646\u0648\u0639 \u0648\u0631\u0648\u062F \u0646\u0627\u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A." });
 });
+function stripHeavyData(doc) {
+  if (!doc) return doc;
+  const clean = { ...doc };
+  delete clean.coachGallery;
+  delete clean.coachAchievements;
+  return clean;
+}
 app.get("/api/settings", async (req, res) => {
   const settings = await settingsCol.findOne({});
+  res.json(stripHeavyData(settings) || {});
+});
+app.get("/api/settings/full", async (req, res) => {
+  const settings = await settingsCol.findOne({});
   res.json(settings || {});
+});
+app.get("/api/settings/gallery", async (req, res) => {
+  const settings = await settingsCol.findOne({}, { projection: { coachGallery: 1, coachAchievements: 1, _id: 0 } });
+  res.json({ coachGallery: settings?.coachGallery || [], coachAchievements: settings?.coachAchievements || [] });
 });
 app.post("/api/settings", async (req, res) => {
   await settingsCol.updateOne({}, { $set: req.body }, { upsert: true });
   const settings = await settingsCol.findOne({});
   res.json({ success: true, settings });
 });
+function stripMemberHeavy(m) {
+  if (!m) return m;
+  const clean = { ...m };
+  if (clean.avatar && clean.avatar.startsWith("data:")) {
+    clean.avatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=250&auto=format&fit=crop";
+  }
+  return clean;
+}
 app.get("/api/members", async (req, res) => {
   const members = await membersCol.find({}).toArray();
-  res.json(members);
+  res.json(members.map(stripMemberHeavy));
 });
 app.post("/api/members", async (req, res) => {
   const { name, phone, gender, joinDate, endDate, feeStatus, totalFee, paidFee, avatar, nationalCode, birthDate, height, targetWeight, bodyFat, muscleMass, address, password } = req.body;
@@ -546,6 +586,17 @@ app.post("/api/forgot-password", async (req, res) => {
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: Date.now(), db: MONGODB_URI ? "mongodb" : "file" });
 });
+if (process.env.RENDER_EXTERNAL_URL) {
+  const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
+  setInterval(async () => {
+    try {
+      await fetch(keepAliveUrl);
+      console.log("Keep-alive ping sent");
+    } catch (e) {
+    }
+  }, 14 * 60 * 1e3);
+  console.log(`Keep-alive enabled for ${keepAliveUrl}`);
+}
 var distPath = import_path.default.join(process.cwd(), "dist");
 if (import_fs.default.existsSync(distPath)) {
   app.use(import_express.default.static(distPath));
