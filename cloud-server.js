@@ -73,8 +73,8 @@ async function connectDB() {
   return true;
 }
 async function seedDB() {
-  const count = await membersCol.countDocuments();
-  if (count > 0) return;
+  const lockerCount = await lockersCol.countDocuments();
+  if (lockerCount > 0) return;
   const defaultLockers = Array.from({ length: 24 }, (_, i) => ({
     id: i + 1,
     status: "empty",
