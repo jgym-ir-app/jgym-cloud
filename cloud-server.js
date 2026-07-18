@@ -139,6 +139,14 @@ app.get("/api/members", async (req, res) => {
 });
 app.post("/api/members", async (req, res) => {
   const { name, phone, gender, joinDate, endDate, feeStatus, totalFee, paidFee, avatar, nationalCode, birthDate, height, targetWeight, bodyFat, muscleMass, address, password } = req.body;
+  const existingPhone = await membersCol.findOne({ phone });
+  if (existingPhone) {
+    return res.status(409).json({ success: false, message: "\u0634\u0645\u0627\u0631\u0647 \u0645\u0648\u0628\u0627\u06CC\u0644 \u0642\u0628\u0644\u0627\u064B \u062B\u0628\u062A \u0634\u062F\u0647 \u0627\u0633\u062A. \u0627\u0645\u06A9\u0627\u0646 \u062B\u0628\u062A \u0646\u0627\u0645 \u062A\u06A9\u0631\u0627\u0631\u06CC \u0648\u062C\u0648\u062F \u0646\u062F\u0627\u0631\u062F." });
+  }
+  const existingName = await membersCol.findOne({ name });
+  if (existingName) {
+    return res.status(409).json({ success: false, message: "\u0646\u0627\u0645 \u0648 \u0646\u0627\u0645 \u062E\u0627\u0646\u0648\u0627\u062F\u06AF\u06CC \u0642\u0628\u0644\u0627\u064B \u062B\u0628\u062A \u0634\u062F\u0647 \u0627\u0633\u062A. \u0627\u0645\u06A9\u0627\u0646 \u062B\u0628\u062A \u0646\u0627\u0645 \u062A\u06A9\u0631\u0627\u0631\u06CC \u0648\u062C\u0648\u062F \u0646\u062F\u0627\u0631\u062F." });
+  }
   const count = await membersCol.countDocuments();
   const membershipId = `JG-${100 + count + 1}`;
   const newMember = {
@@ -505,6 +513,35 @@ app.delete("/api/transformations/:id", async (req, res) => {
 });
 app.post("/api/payment/zarinpal/initiate", (req, res) => {
   res.json({ success: true, redirectUrl: "#", authority: "CLOUD_SIM", simulated: true, message: "\u067E\u0631\u062F\u0627\u062E\u062A \u0627\u0628\u0631\u06CC \u0634\u0628\u06CC\u0647\u200C\u0633\u0627\u0632\u06CC \u0634\u062F." });
+});
+app.post("/api/forgot-password", async (req, res) => {
+  const { phone, name } = req.body;
+  if (!phone) return res.status(400).json({ success: false, message: "\u0634\u0645\u0627\u0631\u0647 \u0645\u0648\u0628\u0627\u06CC\u0644 \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." });
+  const member = await membersCol.findOne({ phone });
+  const memberName = member ? member.name : name || "\u0646\u0627\u0634\u0646\u0627\u0633";
+  const now = /* @__PURE__ */ new Date();
+  const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const msg = {
+    id: `msg_forgotpw_${Date.now()}`,
+    memberId: member ? member.id : "unknown",
+    memberName,
+    text: `\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0628\u0627\u0632\u06CC\u0627\u0628\u06CC \u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u0627\u0632 \u0633\u0645\u062A ${memberName} (\u0634\u0645\u0627\u0631\u0647: ${phone}). \u0644\u0637\u0641\u0627\u064B \u0631\u0645\u0632 \u062C\u062F\u06CC\u062F \u0631\u0627 \u0628\u0631\u0627\u06CC \u0627\u06CC\u0646 \u0639\u0636\u0648 \u062A\u0646\u0638\u06CC\u0645 \u06A9\u0646\u06CC\u062F.`,
+    sender: "member",
+    date: "1405/04/15",
+    time: timeStr,
+    isRead: false,
+    type: "forgot-password"
+  };
+  await messagesCol.insertOne(msg);
+  await notificationsCol.insertOne({
+    id: `notif_${Date.now()}`,
+    title: `\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0628\u0627\u0632\u06CC\u0627\u0628\u06CC \u0631\u0645\u0632: ${memberName}`,
+    message: `${memberName} (\u0634\u0645\u0627\u0631\u0647: ${phone}) \u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0628\u0627\u0632\u06CC\u0627\u0628\u06CC \u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u062F\u0627\u062F\u0647.`,
+    date: timeStr,
+    isRead: false
+  });
+  emit("message:new", { message: msg });
+  res.json({ success: true, message: "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0628\u0627\u0632\u06CC\u0627\u0628\u06CC \u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u0634\u0645\u0627 \u0628\u0631\u0627\u06CC \u0645\u062F\u06CC\u0631 \u0628\u0627\u0634\u06AF\u0627\u0647 \u0627\u0631\u0633\u0627\u0644 \u0634\u062F. \u0644\u0637\u0641\u0627\u064B \u0645\u0646\u062A\u0638\u0631 \u067E\u0627\u0633\u062E \u0628\u0645\u0627\u0646\u06CC\u062F." });
 });
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: Date.now(), db: MONGODB_URI ? "mongodb" : "file" });
