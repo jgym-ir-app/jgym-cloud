@@ -59,7 +59,6 @@ app.use((req, res, next) => {
       if (compressed.length < body.length * 0.9) {
         res.setHeader("Content-Encoding", "gzip");
         res.setHeader("Content-Length", compressed.length);
-        res.removeHeader("Content-Type");
         return originalSend(compressed);
       }
     }
