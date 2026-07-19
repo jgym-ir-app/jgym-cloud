@@ -337,7 +337,7 @@ app.post("/api/members/:id/pay-tuition", async (req, res) => {
     await lockersCol.updateOne({ id: member.currentLockerId, status: "debtor" }, { $set: { status: "active" } });
   }
   const now = new Date();
-  await transactionsCol.insertOne({ id: `tx_${Date.now()}`, type: "membership", amount, description: `پرداخت شهریه ${member.name}`, date: todayJalali() });
+  await transactionsCol.insertOne({ id: `tx_${Date.now()}`, type: "membership", amount, description: `پرداخت شهریه ${member.name}`, date: req.body.date || todayJalali() });
   await notificationsCol.insertOne({ id: `notif_${Date.now()}`, title: `پرداخت شهریه: ${member.name}`, message: `${member.name} مبلغ ${amount.toLocaleString("fa-IR")} تومان پرداخت کرد.`, date: `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`, isRead: false });
   const updatedMember = await membersCol.findOne({ id: req.params.id });
   emit("payment:received", { member: updatedMember, amount });
@@ -649,6 +649,30 @@ app.post("/api/admin/cleanup-lockers", async (req, res) => {
   await lockersCol.insertMany(defaultLockers);
   const finalCount = await lockersCol.countDocuments();
   res.json({ success: true, lockerCount: finalCount });
+});
+
+// Temporary: full data reset
+app.post("/api/admin/reset-all-data", async (req, res) => {
+  const { username, password } = req.body;
+  const settings = await settingsCol.findOne({});
+  if (username !== (settings?.adminUsername || "jgym") || password !== (settings?.adminPassword || "Jgym123321")) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+  await messagesCol.deleteMany({});
+  await transactionsCol.deleteMany({});
+  await attendanceCol.deleteMany({});
+  await notificationsCol.deleteMany({});
+  await lockerRequestsCol.deleteMany({});
+  await transformationsCol.deleteMany({});
+  await membersCol.deleteMany({});
+  await lockersCol.deleteMany({});
+  const defaultLockers = Array.from({ length: 24 }, (_, i) => ({
+    id: i + 1, status: "empty", memberId: null, memberName: null,
+    memberPhoto: null, membershipId: null, checkInTime: null,
+    reservationNote: null, isDoorOpen: false
+  }));
+  await lockersCol.insertMany(defaultLockers);
+  res.json({ success: true, message: "All data reset" });
 });
 
 // Keep-alive ping for Render free tier (prevents sleeping)
