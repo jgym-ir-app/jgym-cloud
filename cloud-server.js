@@ -50,6 +50,33 @@ var lockerRequestsCol;
 var messagesCol;
 var settingsCol;
 var transformationsCol;
+function gregorianToJalali(gy, gm, gd) {
+  const g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+  let gy2 = gm > 2 ? gy + 1 : gy;
+  let days = 355666 + 365 * gy + Math.floor((gy2 + 3) / 4) - Math.floor((gy2 + 99) / 100) + Math.floor((gy2 + 399) / 400) + gd + g_d_m[gm - 1];
+  let jy = -1595 + 33 * Math.floor(days / 12053);
+  days %= 12053;
+  jy += 4 * Math.floor(days / 1461);
+  days %= 1461;
+  if (days > 365) {
+    jy += Math.floor((days - 1) / 365);
+    days = (days - 1) % 365;
+  }
+  let jm, jd;
+  if (days < 186) {
+    jm = 1 + Math.floor(days / 31);
+    jd = 1 + days % 31;
+  } else {
+    jm = 7 + Math.floor((days - 186) / 30);
+    jd = 1 + (days - 186) % 30;
+  }
+  return [jy, jm, jd];
+}
+function todayJalali() {
+  const now = /* @__PURE__ */ new Date();
+  const [jy, jm, jd] = gregorianToJalali(now.getFullYear(), now.getMonth() + 1, now.getDate());
+  return `${jy}/${String(jm).padStart(2, "0")}/${String(jd).padStart(2, "0")}`;
+}
 app.use((0, import_cors.default)());
 app.use((req, res, next) => {
   const originalSend = res.send.bind(res);
@@ -221,7 +248,7 @@ app.post("/api/members", async (req, res) => {
   };
   await membersCol.insertOne(newMember);
   if (paidFee > 0) {
-    await transactionsCol.insertOne({ id: `tx_${Date.now()}`, type: "membership", amount: Number(paidFee), description: `\u062B\u0628\u062A \u0646\u0627\u0645 ${name}`, date: joinDate || "1405/04/10" });
+    await transactionsCol.insertOne({ id: `tx_${Date.now()}`, type: "membership", amount: Number(paidFee), description: `\u062B\u0628\u062A \u0646\u0627\u0645 ${name}`, date: joinDate || todayJalali() });
   }
   emit("member:created", { member: newMember });
   res.status(201).json(newMember);
@@ -275,7 +302,7 @@ app.post("/api/members/:id/checkin", async (req, res) => {
   else if (member.membershipStatus === "expiring") status = "expiring";
   await lockersCol.updateOne({ id: Number(lockerId) }, { $set: { status, memberId: member.id, memberName: member.name, memberPhoto: member.avatar, membershipId: member.membershipId, checkInTime: timeStr, reservationNote: null, isDoorOpen: false } });
   await membersCol.updateOne({ id: req.params.id }, { $set: { isPresent: true, currentLockerId: Number(lockerId) } });
-  await attendanceCol.insertOne({ id: `att_${Date.now()}`, memberId: member.id, memberName: member.name, lockerId: Number(lockerId), checkIn: `1405/04/10 ${timeStr}`, checkOut: null });
+  await attendanceCol.insertOne({ id: `att_${Date.now()}`, memberId: member.id, memberName: member.name, lockerId: Number(lockerId), checkIn: `${todayJalali()} ${timeStr}`, checkOut: null });
   const updatedMember = await membersCol.findOne({ id: req.params.id });
   const updatedLocker = await lockersCol.findOne({ id: Number(lockerId) });
   emit("member:checkedin", { member: updatedMember, locker: updatedLocker });
@@ -290,7 +317,7 @@ app.post("/api/members/:id/checkout", async (req, res) => {
   await membersCol.updateOne({ id: req.params.id }, { $set: { isPresent: false, currentLockerId: null } });
   const now = /* @__PURE__ */ new Date();
   const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  await attendanceCol.updateOne({ memberId: member.id, checkOut: null }, { $set: { checkOut: `1405/04/10 ${timeStr}` } });
+  await attendanceCol.updateOne({ memberId: member.id, checkOut: null }, { $set: { checkOut: `${todayJalali()} ${timeStr}` } });
   const updatedMember = await membersCol.findOne({ id: req.params.id });
   emit("member:checkedout", { member: updatedMember });
   res.json({ success: true, member: updatedMember });
@@ -312,7 +339,7 @@ app.post("/api/members/:id/pay-tuition", async (req, res) => {
     await lockersCol.updateOne({ id: member.currentLockerId, status: "debtor" }, { $set: { status: "active" } });
   }
   const now = /* @__PURE__ */ new Date();
-  await transactionsCol.insertOne({ id: `tx_${Date.now()}`, type: "membership", amount, description: `\u067E\u0631\u062F\u0627\u062E\u062A \u0634\u0647\u0631\u06CC\u0647 ${member.name}`, date: "1405/04/10" });
+  await transactionsCol.insertOne({ id: `tx_${Date.now()}`, type: "membership", amount, description: `\u067E\u0631\u062F\u0627\u062E\u062A \u0634\u0647\u0631\u06CC\u0647 ${member.name}`, date: todayJalali() });
   await notificationsCol.insertOne({ id: `notif_${Date.now()}`, title: `\u067E\u0631\u062F\u0627\u062E\u062A \u0634\u0647\u0631\u06CC\u0647: ${member.name}`, message: `${member.name} \u0645\u0628\u0644\u063A ${amount.toLocaleString("fa-IR")} \u062A\u0648\u0645\u0627\u0646 \u067E\u0631\u062F\u0627\u062E\u062A \u06A9\u0631\u062F.`, date: `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`, isRead: false });
   const updatedMember = await membersCol.findOne({ id: req.params.id });
   emit("payment:received", { member: updatedMember, amount });
@@ -351,7 +378,7 @@ app.post("/api/lockers/:id/release", async (req, res) => {
     await membersCol.updateOne({ id: locker.memberId }, { $set: { isPresent: false, currentLockerId: null } });
     const now = /* @__PURE__ */ new Date();
     const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    await attendanceCol.updateOne({ memberId: locker.memberId, checkOut: null }, { $set: { checkOut: `1405/04/10 ${timeStr}` } });
+    await attendanceCol.updateOne({ memberId: locker.memberId, checkOut: null }, { $set: { checkOut: `${todayJalali()} ${timeStr}` } });
   }
   const empty = { id, status: "empty", memberId: null, memberName: null, memberPhoto: null, membershipId: null, checkInTime: null, reservationNote: null, isDoorOpen: false };
   await lockersCol.updateOne({ id }, { $set: empty });
@@ -400,10 +427,10 @@ app.post("/api/lockers/:id/guest-reserve", async (req, res) => {
   const memberCount = await membersCol.countDocuments();
   const membershipId = `GUEST-${1e3 + memberCount + 1}`;
   const guestAvatar = gender === "female" ? "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150" : "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150";
-  await membersCol.insertOne({ id: guestId, name: guestName, phone: guestPhone, gender: gender || "male", joinDate: "1405/04/10", endDate: "1405/04/10", membershipStatus: "active", feeStatus: "settled", totalFee: 1e5, paidFee: 5e4, avatar: guestAvatar, membershipId, weightHistory: [], workoutPlan: null, dietPlan: null, isPresent: false, currentLockerId: null });
+  await membersCol.insertOne({ id: guestId, name: guestName, phone: guestPhone, gender: gender || "male", joinDate: todayJalali(), endDate: todayJalali(), membershipStatus: "active", feeStatus: "settled", totalFee: 1e5, paidFee: 5e4, avatar: guestAvatar, membershipId, weightHistory: [], workoutPlan: null, dietPlan: null, isPresent: false, currentLockerId: null });
   await lockersCol.updateOne({ id }, { $set: { status: "reserved", memberId: guestId, memberName: guestName, memberPhoto: guestAvatar, membershipId, checkInTime: null, reservationNote: "\u0631\u0632\u0631\u0648 \u0645\u0647\u0645\u0627\u0646", isDoorOpen: false } });
-  await lockerRequestsCol.insertOne({ id: `req_${Date.now()}`, memberId: guestId, memberName: guestName, memberPhoto: guestAvatar, membershipId, type: "allocation", status: "pending", date: "1405/04/10", time: "17:00", lockerId: id });
-  await transactionsCol.insertOne({ id: `tx_${Date.now()}`, type: "membership", amount: 5e4, description: `\u0631\u0632\u0631\u0648 \u0645\u0647\u0645\u0627\u0646 ${guestName}`, date: "1405/04/10" });
+  await lockerRequestsCol.insertOne({ id: `req_${Date.now()}`, memberId: guestId, memberName: guestName, memberPhoto: guestAvatar, membershipId, type: "allocation", status: "pending", date: todayJalali(), time: "17:00", lockerId: id });
+  await transactionsCol.insertOne({ id: `tx_${Date.now()}`, type: "membership", amount: 5e4, description: `\u0631\u0632\u0631\u0648 \u0645\u0647\u0645\u0627\u0646 ${guestName}`, date: todayJalali() });
   const updated = await lockersCol.findOne({ id });
   res.status(200).json({ success: true, locker: updated });
 });
@@ -417,7 +444,7 @@ app.post("/api/lockers/:id/member-reserve", async (req, res) => {
   const locker = await lockersCol.findOne({ id });
   if (!locker || locker.status !== "empty") return res.status(400).json({ success: false, message: "\u06A9\u0645\u062F \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A." });
   await lockersCol.updateOne({ id }, { $set: { status: "reserved", memberId: member.id, memberName: member.name, memberPhoto: member.avatar, membershipId: member.membershipId, checkInTime: null, reservationNote: "\u0631\u0632\u0631\u0648 \u0622\u0646\u0644\u0627\u06CC\u0646", isDoorOpen: false } });
-  await lockerRequestsCol.insertOne({ id: `req_${Date.now()}`, memberId: member.id, memberName: member.name, memberPhoto: member.avatar, membershipId: member.membershipId, type: "allocation", status: "pending", date: "1405/04/10", time: "17:00", lockerId: id });
+  await lockerRequestsCol.insertOne({ id: `req_${Date.now()}`, memberId: member.id, memberName: member.name, memberPhoto: member.avatar, membershipId: member.membershipId, type: "allocation", status: "pending", date: todayJalali(), time: "17:00", lockerId: id });
   const updated = await lockersCol.findOne({ id });
   res.status(200).json({ success: true, locker: updated });
 });
@@ -444,14 +471,14 @@ app.post("/api/locker-requests/:id/approve", async (req, res) => {
     else if (member.membershipStatus === "expiring") status = "expiring";
     await lockersCol.updateOne({ id: assigned.id }, { $set: { status, memberId: member.id, memberName: member.name, memberPhoto: member.avatar, membershipId: member.membershipId, checkInTime: timeStr, reservationNote: null, isDoorOpen: false } });
     await membersCol.updateOne({ id: member.id }, { $set: { isPresent: true, currentLockerId: assigned.id } });
-    await attendanceCol.insertOne({ id: `att_${Date.now()}`, memberId: member.id, memberName: member.name, lockerId: assigned.id, checkIn: `1405/04/10 ${timeStr}`, checkOut: null });
+    await attendanceCol.insertOne({ id: `att_${Date.now()}`, memberId: member.id, memberName: member.name, lockerId: assigned.id, checkIn: `${todayJalali()} ${timeStr}`, checkOut: null });
     await lockerRequestsCol.updateOne({ id: request.id }, { $set: { status: "approved", lockerId: assigned.id } });
   } else if (request.type === "checkout") {
     if (!member.isPresent || !member.currentLockerId) return res.status(400).json({ success: false, message: "\u0639\u0636\u0648 \u062D\u0636\u0648\u0631 \u0646\u062F\u0627\u0631\u062F." });
     const lockerId = member.currentLockerId;
     await lockersCol.updateOne({ id: lockerId }, { $set: { status: "empty", memberId: null, memberName: null, memberPhoto: null, membershipId: null, checkInTime: null, reservationNote: null, isDoorOpen: false } });
     await membersCol.updateOne({ id: member.id }, { $set: { isPresent: false, currentLockerId: null } });
-    await attendanceCol.updateOne({ memberId: member.id, checkOut: null }, { $set: { checkOut: `1405/04/10 ${timeStr}` } });
+    await attendanceCol.updateOne({ memberId: member.id, checkOut: null }, { $set: { checkOut: `${todayJalali()} ${timeStr}` } });
     await lockerRequestsCol.updateOne({ id: request.id }, { $set: { status: "approved" } });
   }
   const updated = await lockerRequestsCol.findOne({ id: request.id });
@@ -471,7 +498,7 @@ app.post("/api/locker-requests", async (req, res) => {
   if (!member) return res.status(404).json({ success: false, message: "\u0639\u0636\u0648 \u06CC\u0627\u0641\u062A \u0646\u0634\u062F." });
   const now = /* @__PURE__ */ new Date();
   const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  const newReq = { id: `req_${Date.now()}`, memberId: member.id, memberName: member.name, memberPhoto: member.avatar, membershipId: member.membershipId, type, status: "pending", date: "1405/04/10", time: timeStr, lockerId: type === "checkout" ? member.currentLockerId : null };
+  const newReq = { id: `req_${Date.now()}`, memberId: member.id, memberName: member.name, memberPhoto: member.avatar, membershipId: member.membershipId, type, status: "pending", date: todayJalali(), time: timeStr, lockerId: type === "checkout" ? member.currentLockerId : null };
   await lockerRequestsCol.insertOne(newReq);
   await notificationsCol.insertOne({ id: `notif_${Date.now()}`, title: type === "allocation" ? `\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u06A9\u0645\u062F: ${member.name}` : `\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u062A\u062E\u0644\u06CC\u0647: ${member.name}`, message: `${member.name} \u062F\u0631\u062E\u0648\u0627\u0633\u062A ${type === "allocation" ? "\u06A9\u0645\u062F \u062C\u062F\u06CC\u062F" : "\u062A\u062E\u0644\u06CC\u0647"} \u062F\u0627\u062F\u0647.`, date: timeStr, isRead: false });
   res.status(201).json({ success: true, request: newReq });
@@ -505,7 +532,7 @@ app.post("/api/notifications/read", async (req, res) => {
   res.json({ success: true });
 });
 app.post("/api/sales", async (req, res) => {
-  const tx = { id: `tx_${Date.now()}`, type: req.body.type, amount: Number(req.body.amount), description: req.body.description, date: "1405/04/10" };
+  const tx = { id: `tx_${Date.now()}`, type: req.body.type, amount: Number(req.body.amount), description: req.body.description, date: todayJalali() };
   await transactionsCol.insertOne(tx);
   res.status(201).json(tx);
 });
@@ -522,7 +549,7 @@ app.post("/api/messages", async (req, res) => {
   if (!memberId || !text || !sender) return res.status(400).json({ success: false, message: "\u0646\u0627\u0642\u0635." });
   const now = /* @__PURE__ */ new Date();
   const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  const msg = { id: `msg_${Date.now()}`, memberId, memberName: memberName || "\u0648\u0631\u0632\u0634\u06A9\u0627\u0631", text, sender, date: "1405/04/15", time: timeStr, isRead: false };
+  const msg = { id: `msg_${Date.now()}`, memberId, memberName: memberName || "\u0648\u0631\u0632\u0634\u06A9\u0627\u0631", text, sender, date: todayJalali(), time: timeStr, isRead: false };
   await messagesCol.insertOne(msg);
   emit("message:new", { message: msg });
   res.json({ success: true, message: msg });
@@ -532,7 +559,7 @@ app.post("/api/messages/:id/reply", async (req, res) => {
   if (!msg) return res.status(404).json({ success: false, message: "\u067E\u06CC\u0627\u0645 \u06CC\u0627\u0641\u062A \u0646\u0634\u062F." });
   const now = /* @__PURE__ */ new Date();
   const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  await messagesCol.updateOne({ id: req.params.id }, { $set: { replyText: req.body.replyText, replyDate: "1405/04/15", replyTime: timeStr, isReplied: true, isRead: true } });
+  await messagesCol.updateOne({ id: req.params.id }, { $set: { replyText: req.body.replyText, replyDate: todayJalali(), replyTime: timeStr, isReplied: true, isRead: true } });
   const updated = await messagesCol.findOne({ id: req.params.id });
   res.json({ success: true, message: updated });
 });
@@ -541,7 +568,7 @@ app.get("/api/transformations", async (req, res) => {
   res.json(await transformationsCol.find({}).toArray());
 });
 app.post("/api/transformations", async (req, res) => {
-  const t = { id: `trans_${Date.now()}`, ...req.body, date: "1405/04/10", consentGranted: !!req.body.consentGranted, isPublic: !!req.body.isPublic };
+  const t = { id: `trans_${Date.now()}`, ...req.body, date: todayJalali(), consentGranted: !!req.body.consentGranted, isPublic: !!req.body.isPublic };
   await transformationsCol.insertOne(t);
   res.status(201).json({ success: true, transformation: t });
 });
@@ -574,7 +601,7 @@ app.post("/api/forgot-password", async (req, res) => {
     memberName,
     text: `\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0628\u0627\u0632\u06CC\u0627\u0628\u06CC \u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u0627\u0632 \u0633\u0645\u062A ${memberName} (\u0634\u0645\u0627\u0631\u0647: ${phone}). \u0644\u0637\u0641\u0627\u064B \u0631\u0645\u0632 \u062C\u062F\u06CC\u062F \u0631\u0627 \u0628\u0631\u0627\u06CC \u0627\u06CC\u0646 \u0639\u0636\u0648 \u062A\u0646\u0638\u06CC\u0645 \u06A9\u0646\u06CC\u062F.`,
     sender: "member",
-    date: "1405/04/15",
+    date: todayJalali(),
     time: timeStr,
     isRead: false,
     type: "forgot-password"
