@@ -651,42 +651,6 @@ app.post("/api/admin/cleanup-lockers", async (req, res) => {
   res.json({ success: true, lockerCount: finalCount });
 });
 
-// Full data reset - clear all records, keep only settings + empty lockers + members
-app.post("/api/admin/reset-all-data", async (req, res) => {
-  const { username, password } = req.body;
-  const settings = await settingsCol.findOne({});
-  if (username !== (settings?.adminUsername || "jgym") || password !== (settings?.adminPassword || "Jgym123321")) {
-    return res.status(401).json({ success: false, message: "Unauthorized" });
-  }
-  // Clear all activity records
-  await messagesCol.deleteMany({});
-  await transactionsCol.deleteMany({});
-  await attendanceCol.deleteMany({});
-  await notificationsCol.deleteMany({});
-  await lockerRequestsCol.deleteMany({});
-  await transformationsCol.deleteMany({});
-  // Reset members to empty
-  await membersCol.deleteMany({});
-  // Reset lockers to 24 empty
-  await lockersCol.deleteMany({});
-  const defaultLockers = Array.from({ length: 24 }, (_, i) => ({
-    id: i + 1, status: "empty", memberId: null, memberName: null,
-    memberPhoto: null, membershipId: null, checkInTime: null,
-    reservationNote: null, isDoorOpen: false
-  }));
-  await lockersCol.insertMany(defaultLockers);
-  // Reset settings to defaults (keep admin credentials)
-  await settingsCol.updateOne({}, { $set: {
-    coachName: "جابر پورعباس",
-    coachPhone: "09112223344",
-    gymPhone: "۰۹۱۱ ۱۱۱ ۲۲۳۳ - ۰۱۱ ۳۵۷۶ ۰۰۰۰",
-    gallery: [],
-    achievements: [],
-    notifications: []
-  }});
-  res.json({ success: true, message: "All data reset to factory defaults" });
-});
-
 // Keep-alive ping for Render free tier (prevents sleeping)
 if (process.env.RENDER_EXTERNAL_URL) {
   const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
